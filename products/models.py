@@ -1,5 +1,40 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.contrib.auth.models import AbstractUser, Group, Permission
+
+class ShopUser(AbstractUser):
+    OWNER = 'owner'
+    HELPER = 'helper'
+    
+    ROLE_CHOICES = [
+        (OWNER, 'Shop Owner'),
+        (HELPER, 'Helper'),
+    ]
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default=HELPER,
+    )
+    groups = models.ManyToManyField(
+        Group,
+        verbose_name='groups',
+        blank=True,
+        help_text='The groups this user belongs to.',
+        related_name='products_user_set',
+        related_query_name='products_user',
+    )
+    
+    user_permissions = models.ManyToManyField(
+        Permission,
+        verbose_name='user permissions',
+        blank=True,
+        help_text='Specific permissions for this user.',
+        related_name='products_user_set',  
+        related_query_name='products_user',
+    )
+    
+    def __str__(self):
+        return self.username
 
 class Manufacturer(models.Model):
     name = models.CharField(max_length=200)
@@ -56,3 +91,25 @@ class Product(models.Model):
     
     def __str__(self):
         return self.title
+    
+    
+class Shop(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    address = models.TextField()
+    phone = models.CharField(max_length=20)
+    email = models.EmailField()
+    owner = models.ForeignKey(
+        ShopUser,
+        on_delete=models.CASCADE,
+        related_name='shops'
+    )
+    helpers = models.ManyToManyField(
+        ShopUser,
+        related_name='helper_at_shops',
+        blank=True,
+        limit_choices_to={'role': ShopUser.HELPER}
+    )
+    
+    def __str__(self):
+        return self.name
