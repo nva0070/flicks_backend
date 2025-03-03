@@ -1,0 +1,13 @@
+{% extends 'admin/base.html' %}
+
+{% block content %}
+    <div>
+        <h2>Upload Products</h2>
+        <p>Upload your products using CSV or Excel file</p>
+        <form method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="default">Upload File</button>
+        </form>
+    </div>
+{% endblock %}

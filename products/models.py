@@ -1,6 +1,15 @@
 from django.db import models
 
-# Create your models here.
+class Manufacturer(models.Model):
+    name = models.CharField(max_length=200)
+    email = models.EmailField(unique=True)
+    phone = models.CharField(max_length=20)
+    address = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
 
 class Product(models.Model):
     GENDER_CHOICES=[
@@ -9,13 +18,20 @@ class Product(models.Model):
         ('U','Unisex'),
     ]
 
-
     title=models.CharField(max_length=200)
+    manufacturer = models.ForeignKey(
+        Manufacturer, 
+        on_delete=models.CASCADE, 
+        related_name='products',
+        null=True,
+        blank=True
+    )
     product_category=models.CharField(max_length=100)
     age_group=models.CharField(max_length=20)
     brand=models.CharField(max_length=100)
     gender=models.CharField(max_length=1,choices=GENDER_CHOICES,default='U')
     description=models.TextField()
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
     def __str__(self):
         return self.title
