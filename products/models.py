@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 
 class Manufacturer(models.Model):
     name = models.CharField(max_length=200)
@@ -10,6 +11,26 @@ class Manufacturer(models.Model):
 
     def __str__(self):
         return self.name
+
+class Distributor(models.Model):
+    name = models.CharField(max_length=200)
+    location = models.CharField(max_length=200)
+    email = models.EmailField(unique=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    manufacturers = models.ManyToManyField(
+        Manufacturer, 
+        related_name='distributors',
+        blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        if not self.email and not self.phone:
+            raise ValidationError('At least one contact method (email/phone) is required')
 
 class Product(models.Model):
     GENDER_CHOICES=[

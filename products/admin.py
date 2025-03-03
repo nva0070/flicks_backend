@@ -6,19 +6,16 @@ import csv
 import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from .models import Manufacturer, Product
+from .models import Manufacturer, Product, Distributor
 
 
 def setup_groups():
-    # Create Staff group
     staff_group, created = Group.objects.get_or_create(name='Staff')
     
-    # Get permissions for Product model
     content_type = ContentType.objects.get_for_model(Product)
     product_permissions = Permission.objects.filter(content_type=content_type)
     staff_group.permissions.set(product_permissions)
 
-    # Get permissions for Manufacturer model
     manufacturer_content_type = ContentType.objects.get_for_model(Manufacturer)
     manufacturer_permissions = Permission.objects.filter(content_type=manufacturer_content_type)
     staff_group.permissions.add(*manufacturer_permissions)
@@ -87,6 +84,12 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ('title', 'brand', 'product_category')
     list_filter = ('product_category', 'brand', 'gender')
     search_fields = ('title', 'brand', 'description')
+
+@admin.register(Distributor)
+class DistributorAdmin(admin.ModelAdmin):
+    list_display = ['name', 'location', 'email', 'phone']
+    filter_horizontal = ['manufacturers']
+    search_fields = ['name', 'location', 'email']
 
 default_app_config = 'products.apps.ProductsConfig'
 
