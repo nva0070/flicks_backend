@@ -33,6 +33,13 @@ class ShopUser(AbstractUser):
         related_query_name='products_user',
     )
     
+    def clean(self):
+        if self.owner and self.owner.role != ShopUser.OWNER:
+            raise ValidationError("The shop owner must have the 'Shop Owner' role.")
+            
+        if self.pk and self.helpers.filter(pk=self.owner.pk).exists():
+            raise ValidationError("The shop owner cannot be a helper at the same time.")
+
     def __str__(self):
         return self.username
 
@@ -87,7 +94,7 @@ class Product(models.Model):
     brand=models.CharField(max_length=100)
     gender=models.CharField(max_length=1,choices=GENDER_CHOICES,default='U')
     description=models.TextField()
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    image = models.ImageField(upload_to='media/', blank=True, null=True)
     
     def __str__(self):
         return self.title

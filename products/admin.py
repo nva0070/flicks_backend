@@ -6,7 +6,7 @@ import csv
 import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from .models import Manufacturer, Product, Distributor
+from .models import Manufacturer, Product, Distributor, ShopUser, Shop
 
 
 def setup_groups():
@@ -56,7 +56,7 @@ class ManufacturerAdmin(admin.ModelAdmin):
                 if ext == 'csv':
                     decoded_file = uploaded_file.read().decode('utf-8').splitlines()
                     data = list(csv.DictReader(decoded_file))
-                else:  # xlsx
+                else:
                     data = pd.read_excel(uploaded_file).to_dict('records')
 
                 for row in data:
@@ -67,8 +67,7 @@ class ManufacturerAdmin(admin.ModelAdmin):
                         age_group=row['Age Group'],
                         brand=row['Brand'],
                         gender=row['Gender'],
-                        description=row['SEO Description'],
-                        price=row['Variant Price']
+                        description=row['SEO Description']
                     )
                 
                 self.message_user(request, "File imported successfully")
@@ -95,3 +94,55 @@ default_app_config = 'products.apps.ProductsConfig'
 
 def ready():
     setup_groups()
+
+
+class ShopAdminForm(forms.ModelForm):
+    owner_username = forms.CharField(max_length=150, required=True)
+    owner_email = forms.EmailField(required=True)
+    owner_password = forms.CharField(widget=forms.PasswordInput, required=True)
+    
+    class Meta:
+        model = Shop
+        exclude = []
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields.pop('owner_username', None)
+            self.fields.pop('owner_email', None)
+            self.fields.pop('owner_password', None)
+
+@admin.register(Shop)
+class ShopAdmin(admin.ModelAdmin):
+    form = ShopAdminForm
+    list_display = ['name', 'address', 'phone', 'email', 'owner']
+    
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:
+            return [
+                (None, {'fields': ['name', 'description', 'address', 'phone', 'email']}),
+                ('Shop Owner', {'fields': ['owner_username', 'owner_email', 'owner_password']}),
+            ]
+        return [
+            (None, {'fields': ['name', 'description', 'address', 'phone', 'email', 'owner', 'helpers']}),
+        ]
+    
+    def save_model(self, request, obj, form, change):
+        if not change:
+            owner = ShopUser.objects.create_user(
+                username=form.cleaned_data['owner_username'],
+                email=form.cleaned_data['owner_email'],
+                password=form.cleaned_data['owner_password'],
+                role=ShopUser.OWNER
+            )
+            obj.owner = owner
+        super().save_model(request, obj, form, change)
+        
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        return form
+
+@admin.register(ShopUser)
+class ShopUserAdmin(admin.ModelAdmin):
+    list_display = ['username', 'email', 'role']
+    list_filter = ['role']
