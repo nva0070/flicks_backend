@@ -7,7 +7,7 @@ import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
 from .models import Manufacturer, Product, Distributor, ShopUser, Shop
-
+from django.utils.safestring import mark_safe
 
 def setup_groups():
     staff_group, created = Group.objects.get_or_create(name='Staff')
@@ -36,8 +36,28 @@ class FileUploadForm(forms.Form):
 
 @admin.register(Manufacturer)
 class ManufacturerAdmin(admin.ModelAdmin):
-    list_display = ['name', 'email', 'phone']
+    list_display = ['name', 'email', 'phone', 'has_banner']
+    readonly_fields = ['banner_preview']
     change_form_template = 'admin/manufacturer_change_form.html'
+    
+    def has_banner(self, obj):
+        return bool(obj.banner)
+    has_banner.boolean = True
+    
+    def banner_preview(self, obj):
+        if obj.banner:
+            return mark_safe(f'<img src="{obj.banner.url}" width="400" />')
+        return "No banner image uploaded"
+    banner_preview.short_description = "Banner Preview"
+    
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'email', 'phone', 'address')
+        }),
+        ('Banner', {
+            'fields': ('banner', 'banner_preview')
+        }),
+    )
     
     def get_urls(self):
         urls = super().get_urls()
@@ -47,6 +67,7 @@ class ManufacturerAdmin(admin.ModelAdmin):
         return new_urls + urls
 
     def upload_csv(self, request, manufacturer_id):
+        # Existing upload_csv method remains unchanged
         if request.method == "POST":
             try:
                 manufacturer = Manufacturer.objects.get(id=manufacturer_id)
@@ -80,9 +101,43 @@ class ManufacturerAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('title', 'brand', 'product_category')
+    list_display = ('title', 'brand', 'product_category', 'has_media')
     list_filter = ('product_category', 'brand', 'gender')
     search_fields = ('title', 'brand', 'description')
+    readonly_fields = ('image_preview', 'video_preview')
+    
+    def has_media(self, obj):
+        return bool(obj.image or obj.flicks)
+    has_media.boolean = True
+    
+    def image_preview(self, obj):
+        if obj.image:
+            return mark_safe(f'<img src="{obj.image.url}" width="300" />')
+        return "No Image"
+    image_preview.short_description = 'Image Preview'
+    
+    def video_preview(self, obj):
+        if obj.flicks:  # Changed from flick to flicks
+            return mark_safe(f'''
+                <video width="320" height="240" controls>
+                    <source src="{obj.flicks.url}" type="video/mp4">  # Changed from flick to flicks
+                    Your browser does not support the video tag.
+                </video>
+            ''')
+        return "No Video"
+    video_preview.short_description = 'Video Preview'
+    
+    fieldsets = (
+        (None, {
+            'fields': ('title', 'manufacturer', 'product_category', 'age_group', 'brand', 'gender')
+        }),
+        ('Details', {
+            'fields': ('description',)
+        }),
+        ('Media', {
+            'fields': ('image', 'image_preview', 'flicks', 'video_preview')  # Changed from video to flicks
+        }),
+    )
 
 @admin.register(Distributor)
 class DistributorAdmin(admin.ModelAdmin):
@@ -115,7 +170,18 @@ class ShopAdminForm(forms.ModelForm):
 @admin.register(Shop)
 class ShopAdmin(admin.ModelAdmin):
     form = ShopAdminForm
-    list_display = ['name', 'address', 'phone', 'email', 'owner']
+    list_display = ['name', 'address', 'phone', 'email', 'owner', 'has_banner']
+    readonly_fields = ['banner_preview']
+    
+    def has_banner(self, obj):
+        return bool(obj.banner)
+    has_banner.boolean = True
+    
+    def banner_preview(self, obj):
+        if obj.banner:
+            return mark_safe(f'<img src="{obj.banner.url}" width="400" />')
+        return "No banner image uploaded"
+    banner_preview.short_description = "Banner Preview"
     
     def get_fieldsets(self, request, obj=None):
         if obj is None:
@@ -124,9 +190,12 @@ class ShopAdmin(admin.ModelAdmin):
                 ('Shop Owner', {'fields': ['owner_username', 'owner_email', 'owner_password']}),
             ]
         return [
-            (None, {'fields': ['name', 'description', 'address', 'phone', 'email', 'owner', 'helpers']}),
+            (None, {'fields': ['name', 'description', 'address', 'phone', 'email']}),
+            ('Banner', {'fields': ['banner', 'banner_preview']}),
+            ('Shop Staff', {'fields': ['owner', 'helpers']}),
         ]
     
+    # Keep the existing save_model and get_form methods
     def save_model(self, request, obj, form, change):
         if not change:
             owner = ShopUser.objects.create_user(

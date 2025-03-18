@@ -2,6 +2,21 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import AbstractUser, Group, Permission
 
+def validate_image(file):
+    """Validate that the file is an image."""
+    if not file:
+        return
+        
+    ext = file.name.split('.')[-1].lower()
+    valid_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+    
+    if ext not in valid_extensions:
+        raise ValidationError('Unsupported file format. Please upload JPG, JPEG, PNG, GIF or WEBP file.')
+    
+    # Check file size (5MB max)
+    if file.size > 5 * 1024 * 1024:
+        raise ValidationError('Image file too large. Please upload a file smaller than 5MB.')
+
 class ShopUser(AbstractUser):
     OWNER = 'owner'
     HELPER = 'helper'
@@ -48,6 +63,13 @@ class Manufacturer(models.Model):
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20)
     address = models.TextField()
+    banner = models.ImageField(
+        upload_to='manufacturers/banners/', 
+        blank=True, 
+        null=True,
+        validators=[validate_image],
+        help_text="Upload a banner image (JPG, PNG, GIF, WEBP, max 5MB)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -94,11 +116,32 @@ class Product(models.Model):
     brand=models.CharField(max_length=100)
     gender=models.CharField(max_length=1,choices=GENDER_CHOICES,default='U')
     description=models.TextField()
-    image = models.ImageField(upload_to='media/', blank=True, null=True)
-    
+    image = models.ImageField(upload_to='products/photos/', blank=True, null=True)
+    def validate_video(file):
+        """Validate that the file is a video in allowed format."""
+        if not file:
+            return
+            
+        ext = file.name.split('.')[-1].lower()
+        valid_extensions = ['mp4', 'mov', 'avi', 'wmv', 'flv', 'webm']
+        
+        if ext not in valid_extensions:
+            raise ValidationError('Unsupported file format. Please upload MP4, MOV, AVI, WMV, FLV or WebM file.')
+        
+        # Check file size (10MB max)
+        if file.size > 10 * 1024 * 1024:
+            raise ValidationError('Video file too large. Please upload a file smaller than 10MB.')
+
+    flicks = models.FileField(
+        upload_to='products/flicks/', 
+        blank=True, 
+        null=True,
+        validators=[validate_video],
+        help_text="Upload video file (MP4, MOV, AVI, WMV, FLV or WebM, max 10MB)"
+    )
+
     def __str__(self):
         return self.title
-    
     
 class Shop(models.Model):
     name = models.CharField(max_length=200)
@@ -106,6 +149,13 @@ class Shop(models.Model):
     address = models.TextField()
     phone = models.CharField(max_length=20)
     email = models.EmailField()
+    banner = models.ImageField(
+        upload_to='shops/banners/', 
+        blank=True, 
+        null=True,
+        validators=[validate_image],
+        help_text="Upload a banner image (JPG, PNG, GIF, WEBP, max 5MB)"
+    )
     owner = models.ForeignKey(
         ShopUser,
         on_delete=models.CASCADE,
