@@ -170,3 +170,94 @@ class Shop(models.Model):
     
     def __str__(self):
         return self.name
+
+class Order(models.Model):
+    PENDING = 'pending'
+    PROCESSING = 'processing'
+    SHIPPED = 'shipped'
+    DELIVERED = 'delivered'
+    CANCELLED = 'cancelled'
+    
+    STATUS_CHOICES = [
+        (PENDING, 'Pending'),
+        (PROCESSING, 'Processing'),
+        (SHIPPED, 'Shipped'),
+        (DELIVERED, 'Delivered'),
+        (CANCELLED, 'Cancelled'),
+    ]
+    
+    order_number = models.CharField(max_length=20, unique=True)
+    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='orders')
+    customer_name = models.CharField(max_length=200)
+    customer_email = models.EmailField()
+    customer_phone = models.CharField(max_length=20)
+    shipping_address = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING)
+    total = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.order_number
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    def __str__(self):
+        return f"{self.product.title} ({self.quantity})"
+
+class Reward(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField()
+    points_required = models.PositiveIntegerField()
+    valid_on = models.CharField(max_length=200, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return self.name
+
+class UserReward(models.Model):
+    EARN = 'earn'
+    REDEEM = 'redeem'
+    
+    TYPE_CHOICES = [
+        (EARN, 'Earned'),
+        (REDEEM, 'Redeemed'),
+    ]
+    
+    user = models.ForeignKey(ShopUser, on_delete=models.CASCADE, related_name='rewards_history')
+    type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    description = models.CharField(max_length=200)
+    points = models.IntegerField()  # Positive for earned, negative for redeemed
+    date = models.DateField(auto_now_add=True)
+    order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True)
+    reward = models.ForeignKey(Reward, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.description}"
+
+class Subscription(models.Model):
+    FREE = 'free'
+    BASIC = 'basic'
+    PREMIUM = 'premium'
+    
+    PLAN_CHOICES = [
+        (FREE, 'Free'),
+        (BASIC, 'Basic'),
+        (PREMIUM, 'Premium'),
+    ]
+    
+    shop = models.OneToOneField(Shop, on_delete=models.CASCADE, related_name='subscription')
+    plan = models.CharField(max_length=10, choices=PLAN_CHOICES, default=FREE)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    is_active = models.BooleanField(default=True)
+    features = models.JSONField(default=list)  # Store features as a JSON array
+    
+    def __str__(self):
+        return f"{self.shop.name} - {self.get_plan_display()}"
