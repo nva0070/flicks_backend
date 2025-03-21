@@ -1,65 +1,61 @@
 # flicks/api.py
 from django.http import JsonResponse
-from products.models import Order, Reward, Shop, UserReward
-from products.serializers import OrderSerializer, RewardSerializer
+from products.models import Order, Reward, Shop, UserReward, ShopUser
+from products.serializers import OrderSerializer, RewardSerializer, ShopUserSerializer
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth.models import User
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate
 import json
 
 # Authentication endpoints
 @api_view(['POST'])
+@permission_classes([AllowAny]) 
 def register_user(request):
     """Register a new user"""
     try:
         data = request.data
-        username = data.get('username')
-        email = data.get('email')
-        password = data.get('password')
+        serializer = ShopUserSerializer(data=data)
         
-        if User.objects.filter(username=username).exists():
-            return Response({'error': 'Username already exists'}, status=status.HTTP_400_BAD_REQUEST)
+        if serializer.is_valid():
+            # Create ShopUser with role
+            user = serializer.save(role=request.data.get('role', ShopUser.HELPER))
+            
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'message': 'User registered successfully',
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'role': user.role
+            })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        if User.objects.filter(email=email).exists():
-            return Response({'error': 'Email already exists'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        user = User.objects.create_user(username=username, email=email, password=password)
-        
-        refresh = RefreshToken.for_user(user)
-        
-        return Response({
-            'message': 'User registered successfully',
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }, status=status.HTTP_201_CREATED)
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def login_user(request):
     """Login a user"""
-    from django.contrib.auth import authenticate
-    
     username = request.data.get('username')
     password = request.data.get('password')
     
     user = authenticate(username=username, password=password)
     
-    if user is not None:
+    if user:
         refresh = RefreshToken.for_user(user)
         return Response({
             'refresh': str(refresh),
             'access': str(refresh.access_token),
-            'user_id': user.id,
             'username': user.username,
-            'email': user.email
+            'role': user.role
         })
-    else:
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 # Store Management endpoints
 @api_view(['GET'])
