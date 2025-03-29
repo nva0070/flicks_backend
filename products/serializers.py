@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Order, OrderItem, Reward, ShopUser, Manufacturer, Distributor, Product, Shop, Subscription, UserReward
+from .models import ShopUser, Manufacturer, Distributor, Product, Shop, Subscription, ProductImage
 
 
 class ShopUserSerializer(serializers.ModelSerializer):
@@ -24,16 +24,61 @@ class DistributorSerializer(serializers.ModelSerializer):
         model = Distributor
         fields = '__all__'
 
-
+class ProductImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'image', 'is_primary', 'alt_text']
+        
 class ProductSerializer(serializers.ModelSerializer):
-    manufacturer_name = serializers.ReadOnlyField(source='manufacturer.name', read_only=True)
+    manufacturer_name = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()  # Add this for flicks
+    images = ProductImageSerializer(many=True, read_only=True, source='images.all')
     
     class Meta:
         model = Product
-        fields = [
-            'id', 'title', 'manufacturer', 'manufacturer_name', 'product_category', 
-            'age_group', 'brand', 'gender', 'description', 'image', 'flicks'
-        ]
+        fields = ['id', 'title', 'brand', 'product_category', 'age_group', 
+                  'gender', 'description', 'manufacturer_name', 'image_url', 'images', 'video_url']
+    
+    def get_manufacturer_name(self, obj):
+        return obj.manufacturer.name if obj.manufacturer else None
+    
+    def get_image_url(self, obj):
+        primary_image = obj.images.filter(is_primary=True).first()
+        if primary_image:
+            return primary_image.image.url
+        return None
+
+    def get_video_url(self, obj):
+        if obj.flicks:
+            return obj.flicks.url
+        return None
+
+class ProductDetailSerializer(serializers.ModelSerializer):
+    manufacturer_name = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
+    images = ProductImageSerializer(many=True, read_only=True, source='images.all')
+    
+    class Meta:
+        model = Product
+        fields = ['id', 'title', 'brand', 'product_category', 'age_group', 
+                 'gender', 'description', 'manufacturer_name', 
+                 'image_url', 'video_url', 'images']
+    
+    def get_manufacturer_name(self, obj):
+        return obj.manufacturer.name if obj.manufacturer else None
+    
+    def get_image_url(self, obj):
+        primary_image = obj.images.filter(is_primary=True).first()
+        if primary_image:
+            return primary_image.image.url
+        return None
+        
+    def get_video_url(self, obj):
+        if obj.flicks:
+            return obj.flicks.url
+        return None
 
 
 class ShopSerializer(serializers.ModelSerializer):
@@ -49,35 +94,6 @@ class ShopSerializer(serializers.ModelSerializer):
     
     def get_helper_count(self, obj):
         return obj.helpers.count()
-
-
-
-class OrderSerializer(serializers.ModelSerializer):
-    items = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Order
-        fields = ['id', 'order_number', 'customer_name', 'status', 'total', 'created_at', 'items']
-    
-    def get_items(self, obj):
-        return OrderItemSerializer(obj.items.all(), many=True).data
-
-class OrderItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.ReadOnlyField(source='product.title')
-    
-    class Meta:
-        model = OrderItem
-        fields = ['id', 'product_name', 'quantity', 'price']
-
-class RewardSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Reward
-        fields = ['id', 'name', 'description', 'points_required', 'valid_on', 'is_active']
-
-class UserRewardSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UserReward
-        fields = ['id', 'type', 'description', 'points', 'date']
 
 class SubscriptionSerializer(serializers.ModelSerializer):
     plan_name = serializers.SerializerMethodField()

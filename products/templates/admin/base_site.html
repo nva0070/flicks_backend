@@ -1,7 +1,15 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Flicks Admin Panel{% endblock %}
 
 {% block branding %}
 <h1 id="site-name"><a href="{% url 'admin:index' %}">Flicks Admin Panel</a></h1>
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+{% if 'products/product' in request.path %}
+<script src="{% static 'admin/js/product_image_inline.js' %}"></script>
+{% endif %}
 {% endblock %}

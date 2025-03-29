@@ -6,7 +6,7 @@ import csv
 import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from .models import Manufacturer, Product, Distributor, ShopUser, Shop
+from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage
 from django.utils.safestring import mark_safe
 
 def setup_groups():
@@ -67,7 +67,6 @@ class ManufacturerAdmin(admin.ModelAdmin):
         return new_urls + urls
 
     def upload_csv(self, request, manufacturer_id):
-        # Existing upload_csv method remains unchanged
         if request.method == "POST":
             try:
                 manufacturer = Manufacturer.objects.get(id=manufacturer_id)
@@ -81,13 +80,24 @@ class ManufacturerAdmin(admin.ModelAdmin):
                     data = pd.read_excel(uploaded_file).to_dict('records')
 
                 for row in data:
+                    # Map gender display value to database value
+                    gender_value = row['Gender']
+                    if gender_value.lower() == 'unisex':
+                        gender_value = 'U'
+                    elif gender_value.lower() == 'male':
+                        gender_value = 'M'
+                    elif gender_value.lower() == 'female':
+                        gender_value = 'F'
+                    else:
+                        gender_value = 'U'  # Default to unisex
+                    
                     Product.objects.create(
                         manufacturer=manufacturer,
                         title=row['Title'],
                         product_category=row['Product Category'],
                         age_group=row['Age Group'],
                         brand=row['Brand'],
-                        gender=row['Gender'],
+                        gender=gender_value,  # Now using the correct database value
                         description=row['SEO Description']
                     )
                 
@@ -99,28 +109,36 @@ class ManufacturerAdmin(admin.ModelAdmin):
         form = FileUploadForm()
         return render(request, "admin/csv_upload.html", {'form': form})
 
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1
+    fields = ['image', 'is_primary', 'alt_text']
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ('title', 'brand', 'product_category', 'has_media')
     list_filter = ('product_category', 'brand', 'gender')
     search_fields = ('title', 'brand', 'description')
     readonly_fields = ('image_preview', 'video_preview')
-    
+    inlines = [ProductImageInline]
+
     def has_media(self, obj):
-        return bool(obj.image or obj.flicks)
+        has_images = obj.images.exists()
+        return bool(has_images or obj.flicks)
     has_media.boolean = True
     
     def image_preview(self, obj):
-        if obj.image:
-            return mark_safe(f'<img src="{obj.image.url}" width="300" />')
+        primary = obj.images.filter(is_primary=True).first()
+        if primary:
+            return mark_safe(f'<img src="{primary.image.url}" width="300" />')
         return "No Image"
     image_preview.short_description = 'Image Preview'
     
     def video_preview(self, obj):
-        if obj.flicks:  # Changed from flick to flicks
+        if obj.flicks:
             return mark_safe(f'''
                 <video width="320" height="240" controls>
-                    <source src="{obj.flicks.url}" type="video/mp4">  # Changed from flick to flicks
+                    <source src="{obj.flicks.url}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
             ''')
@@ -135,7 +153,7 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('description',)
         }),
         ('Media', {
-            'fields': ('image', 'image_preview', 'flicks', 'video_preview')  # Changed from video to flicks
+            'fields': ('image_preview', 'flicks', 'video_preview')  
         }),
     )
 

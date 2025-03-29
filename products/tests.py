@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
-from .models import Shop, Product, Order
+from .models import Shop, Product
 
 User = get_user_model()
 
