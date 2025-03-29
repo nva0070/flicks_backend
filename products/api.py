@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
 import json
@@ -244,6 +245,55 @@ def product_detail(request, product_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+@api_view(['GET'])
+def search_products(request):
+    """Search products by keywords, searching with title, description, brand, manufacturer age group and so on."""
+    query = request.query_params.get('q', '')
+    
+    if not query or len(query) < 2:
+        return Response(
+            {"error": "Please provide a search query with at least 2 characters"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    query_words = query.split()
+    
+    q_objects = Q()
+    
+    for word in query_words:
+        q_objects |= Q(title__icontains=word)
+        q_objects |= Q(description__icontains=word)
+        q_objects |= Q(brand__icontains=word)
+        q_objects |= Q(product_category__icontains=word)
+        q_objects |= Q(age_group__icontains=word)
+        q_objects |= Q(manufacturer__name__icontains=word)
+    
+    products = Product.objects.filter(q_objects).distinct()
+    
+    products_with_title_match = products.filter(title__icontains=query)
+    other_products = products.exclude(id__in=products_with_title_match.values_list('id', flat=True))
+    
+    sorted_products = list(products_with_title_match) + list(other_products)
+    
+    page = int(request.query_params.get('page', 1))
+    page_size = int(request.query_params.get('page_size', 10))
+    
+    start = (page - 1) * page_size
+    end = start + page_size
+    
+    paginated_products = sorted_products[start:end]
+    
+    serializer = ProductSerializer(paginated_products, many=True)
+    
+    return Response({
+        'results': serializer.data,
+        'count': len(sorted_products),
+        'has_more': len(sorted_products) > end,
+        'page': page,
+        'page_size': page_size,
+        'query': query
+    })
+    
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_shop_banner(request):
