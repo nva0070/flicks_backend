@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
 import json
@@ -306,7 +306,21 @@ def search_products(request):
         'page_size': page_size,
         'query': query
     })
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def product_categories(request):
+    """Get the top 6 most common product categories for filtering"""
+    category_counts = Product.objects.values('product_category') \
+                        .annotate(count=Count('product_category')) \
+                        .filter(product_category__isnull=False) \
+                        .exclude(product_category='') \
+                        .order_by('-count')[:6]
     
+    top_categories = [item['product_category'] for item in category_counts]
+    
+    return Response(top_categories)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_shop_banner(request):

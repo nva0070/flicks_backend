@@ -18,6 +18,7 @@ urlpatterns = [
     path('products/filter/', api.filter_products, name='filter-products'),
     path('products/<int:product_id>/', api.product_detail, name='product-detail'),    
     path('products/search/', api.search_products, name='search-products'),
+    path('products/categories/', api.product_categories, name='product-categories'),
     
     path('feed/', api.flicks_feed, name='flicks-feed'),
     path('distributors/', api.distributors_list, name='distributors'),
