@@ -225,27 +225,6 @@ def top_products(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
-def filter_products(request):
-    """Filter products by gender, age, and category"""
-    gender = request.query_params.get('gender')
-    age_group = request.query_params.get('age_group')
-    product_category = request.query_params.get('category')
-    
-    # Start with all products
-    products = Product.objects.all()
-    
-    # Apply filters
-    if gender:
-        products = products.filter(gender=gender)
-    if age_group:
-        products = products.filter(age_group=age_group)
-    if product_category:
-        products = products.filter(product_category=product_category)
-        
-    serializer = ProductSerializer(products, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
 def product_detail(request, product_id):
     """Get detailed information about a specific product"""
     try:
@@ -320,6 +299,51 @@ def product_categories(request):
     top_categories = [item['product_category'] for item in category_counts]
     
     return Response(top_categories)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def age_groups(request):
+    """Get standardized age groups for filtering"""
+    standard_age_groups = [
+        "0-18 Months",
+        "18-36 Months",
+        "3-5 Years",
+        "5-7 Years", 
+        "7-12 Years",
+        "12+ Years"
+    ]
+    
+    return Response(standard_age_groups)
+
+@api_view(['GET'])
+def filter_products(request):
+    """Filter products by gender, age, and category"""
+    gender = request.query_params.get('gender')
+    age_group = request.query_params.get('age_group')
+    product_category = request.query_params.get('category')
+    
+    products = Product.objects.all()
+    
+    if gender:
+        products = products.filter(gender=gender)
+    
+    # Apply category filter
+    if product_category:
+        products = products.filter(product_category=product_category)
+        
+    if age_group:
+        if age_group:
+            all_products = list(products)
+            filtered_products = [
+                product for product in all_products
+                if map_product_age_to_filter(product.age_group) == age_group
+            ]
+            
+            product_ids = [product.id for product in filtered_products]
+            products = Product.objects.filter(id__in=product_ids)
+    
+    serializer = ProductSerializer(products, many=True)
+    return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -452,24 +476,77 @@ def brands_list(request):
 
 # User Profile endpoints
 @api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
 def user_profile(request):
-    """Get or update user profile"""
+    """Get or update user profile and associated shop information"""
+    user = request.user
+    
+    # Find the shop associated with this user (either as owner or helper)
+    shop = None
+    if hasattr(user, 'shops'):
+        shop_queryset = user.shops.all()
+        if shop_queryset.exists():
+            shop = shop_queryset.first()
+    
+    # If not found as owner, check as helper
+    if not shop and hasattr(user, 'helper_at_shops'):
+        helper_shops = user.helper_at_shops.all()
+        if helper_shops.exists():
+            shop = helper_shops.first()
+    
     if request.method == 'GET':
-        # Replace with actual model query
-        profile = {
-            'username': request.user.username,
-            'email': request.user.email,
-            'full_name': 'John Doe',  # Would be fetched from user profile model
-            'phone': '9876543210',
-            'address': '123 Main St, Mumbai',
-            'store_name': 'Kids Toys Store',
-            'membership_since': '2023-05-15'
+        # Build response with user data
+        profile_data = {
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+            'phone': user.phone,
+            'role': user.role,
         }
-        return Response(profile)
+        
+        # Add shop data if available
+        if shop:
+            profile_data.update({
+                'store_name': shop.name,
+                'store_address': shop.address,
+                'store_phone': shop.phone,
+                'store_email': shop.email,
+                'membership_since': shop.created_at.strftime('%Y-%m-%d') if hasattr(shop, 'created_at') else '',
+                'is_owner': shop.owner == user
+            })
+        
+        return Response(profile_data)
+    
     elif request.method == 'PUT':
-        # Logic to update user profile
         data = request.data
-        # Update logic would go here
+        
+        # Update user data
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+        if 'email' in data:
+            user.email = data['email']
+            
+        # Save user changes
+        user.save()
+        
+        # Update shop data if the user has permission
+        if shop and (user.is_staff or shop.owner == user):
+            if 'store_name' in data:
+                shop.name = data['store_name']
+            if 'store_address' in data:
+                shop.address = data['store_address'] 
+            if 'store_phone' in data:
+                shop.phone = data['store_phone']
+            if 'store_email' in data:
+                shop.email = data['store_email']
+                
+            # Save shop changes
+            shop.save()
+        
         return Response({'message': 'Profile updated successfully'})
 
 # API overview endpoint

@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.contrib.auth.models import AbstractUser, Group, Permission
 
 def validate_image(file):
@@ -30,6 +31,17 @@ class ShopUser(AbstractUser):
         choices=ROLE_CHOICES,
         default=HELPER,
     )
+    phone_regex = RegexValidator(
+        regex=r'^\+?1?\d{9,15}$',
+        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
+    )
+    phone = models.CharField(
+        validators=[phone_regex], 
+        max_length=17, 
+        blank=True, 
+        null=True,
+        help_text="Phone number in international format"
+    )
     groups = models.ManyToManyField(
         Group,
         verbose_name='groups',
@@ -47,14 +59,7 @@ class ShopUser(AbstractUser):
         related_name='products_user_set',  
         related_query_name='products_user',
     )
-    
-    def clean(self):
-        if self.owner and self.owner.role != ShopUser.OWNER:
-            raise ValidationError("The shop owner must have the 'Shop Owner' role.")
-            
-        if self.pk and self.helpers.filter(pk=self.owner.pk).exists():
-            raise ValidationError("The shop owner cannot be a helper at the same time.")
-
+   
     def __str__(self):
         return self.username
 
