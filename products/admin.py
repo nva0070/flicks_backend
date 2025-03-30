@@ -6,7 +6,7 @@ import csv
 import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage
+from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage, FeaturedProduct
 from django.utils.safestring import mark_safe
 
 def setup_groups():
@@ -233,3 +233,73 @@ class ShopAdmin(admin.ModelAdmin):
 class ShopUserAdmin(admin.ModelAdmin):
     list_display = ['username', 'email', 'role']
     list_filter = ['role']
+
+@admin.register(FeaturedProduct)
+class FeaturedProductAdmin(admin.ModelAdmin):
+    list_display = ['product', 'featured_type', 'display_order']
+    list_filter = ['featured_type']
+    search_fields = ['product__title', 'product__brand', 'product__product_category']
+    ordering = ['featured_type', 'display_order']
+    list_editable = ['display_order'] 
+    
+    change_list_template = 'admin/change_list_with_manage_button.html'
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('manage-featured/', self.admin_site.admin_view(self.manage_featured), 
+                 name='manage-featured-products'),
+            path('save-featured/', self.admin_site.admin_view(self.save_featured),
+                 name='save-featured-products'),
+        ]
+        return custom_urls + urls
+        
+    def manage_featured(self, request):
+        trending_items = FeaturedProduct.objects.filter(
+            featured_type='trending'
+        ).order_by('display_order')
+        
+        top_items = FeaturedProduct.objects.filter(
+            featured_type='top'
+        ).order_by('display_order')
+        
+        available_products = Product.objects.all().order_by('title')
+        
+        context = {
+            'title': 'Manage Featured Products',
+            'trending_items': trending_items,
+            'top_items': top_items,
+            'available_products': available_products,
+            'opts': self.model._meta,
+        }
+        
+        return render(request, 'admin/manage_featured_products.html', context)
+        
+    def save_featured(self, request):
+        if request.method != 'POST':
+            return redirect('admin:products_featuredproduct_changelist')
+            
+        trending_ids = request.POST.get('trending_ids', '').split(',')
+        top_ids = request.POST.get('top_ids', '').split(',')
+        
+        trending_ids = [id for id in trending_ids if id]
+        top_ids = [id for id in top_ids if id]
+        
+        FeaturedProduct.objects.all().delete()
+        
+        for i, product_id in enumerate(trending_ids):
+            FeaturedProduct.objects.create(
+                product_id=product_id,
+                featured_type='trending',
+                display_order=i
+            )
+            
+        for i, product_id in enumerate(top_ids):
+            FeaturedProduct.objects.create(
+                product_id=product_id,
+                featured_type='top',
+                display_order=i
+            )
+            
+        self.message_user(request, 'Featured products updated successfully.')
+        return redirect('admin:products_featuredproduct_changelist')

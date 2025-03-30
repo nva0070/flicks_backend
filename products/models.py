@@ -235,3 +235,27 @@ class Subscription(models.Model):
     
     def __str__(self):
         return f"{self.shop.name} - {self.get_plan_display()}"
+
+class FeaturedProduct(models.Model):
+    FEATURED_TYPE_CHOICES = [
+        ('trending', 'Trending Products'),
+        ('top', 'Top Products'),
+    ]
+    
+    product = models.ForeignKey(
+        Product, 
+        on_delete=models.CASCADE, 
+        related_name='featured_placements'
+    )
+    featured_type = models.CharField(
+        max_length=10, 
+        choices=FEATURED_TYPE_CHOICES
+    )
+    display_order = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        ordering = ['featured_type', 'display_order']
+        unique_together = ['product', 'featured_type']
+    
+    def __str__(self):
+        return f"{self.product.title} - {self.get_featured_type_display()}"

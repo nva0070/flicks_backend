@@ -1,5 +1,5 @@
 from django.http import JsonResponse
-from products.models import Shop, ShopUser, Product
+from products.models import Shop, ShopUser, Product, FeaturedProduct
 from products.serializers import (
     ProductSerializer, ProductDetailSerializer 
 )
@@ -197,17 +197,30 @@ def subscription_details(request):
 @api_view(['GET'])
 def trending_products(request):
     """Get trending products"""
-    # Use a field that exists in your Product model
-    # Based on the error, you have id, title, brand, etc. but no created_at
-    products = Product.objects.all().order_by('-id')[:10]  # Using ID as a fallback
+    featured_trending = FeaturedProduct.objects.filter(
+        featured_type='trending'
+    ).select_related('product').order_by('display_order')
+    
+    if featured_trending.exists():
+        products = [item.product for item in featured_trending]
+    else:
+        products = Product.objects.all().order_by('-id')[:10]
+    
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
 def top_products(request):
     """Get top products"""
-    # Get top products (in a real app, you'd sort by sales/popularity)
-    products = Product.objects.all().order_by('-id')[:10]
+    featured_top = FeaturedProduct.objects.filter(
+        featured_type='top'
+    ).select_related('product').order_by('display_order')
+    
+    if featured_top.exists():
+        products = [item.product for item in featured_top]
+    else:
+        products = Product.objects.all().order_by('-id')[:10]
+    
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
 

@@ -1,0 +1,321 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}{{ block.super }}
+<style>
+.featured-boxes {
+    display: flex;
+    gap: 20px;
+    margin-top: 20px;
+}
+.featured-box {
+    flex: 1;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 4px;
+    background: #f8f8f8; /* Light gray background like Django admin */
+}
+.product-list {
+    height: 350px;
+    border: 1px solid #ccc;
+    overflow-y: auto;
+    padding: 8px;
+    background: #f8f8f8; /* Light gray instead of white */
+    margin-top: 10px;
+}
+.product-item {
+    padding: 8px;
+    margin: 5px 0;
+    cursor: pointer;
+    border: 1px solid #eee;
+    border-radius: 3px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    background: #f5f5f5; /* Very light gray for items */
+}
+.product-item:hover {
+    background-color: #e8e8e8; /* Darker gray on hover */
+    border-color: #ccc;
+}
+.selected {
+    background-color: #79aec8; /* Django admin blue */
+    color: white;
+    border-color: #417690;
+}
+.selected:hover {
+    background-color: #417690; /* Darker blue when hovering over selected */
+    border-color: #2c5472;
+}
+.selected .product-title {
+    color: white;
+}
+.selected .product-info {
+    color: rgba(255, 255, 255, 0.8);
+}
+.product-info {
+    font-size: 0.9em;
+    color: #666;
+}
+.product-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 3px;
+}
+.action-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+}
+#filter-container {
+    margin-bottom: 15px;
+    background: #f8f8f8; 
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+.col-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #417690; /* Darker border matching Django's blue */
+    background: #e5e5e5; /* Slightly darker than f8f8f8 for contrast */
+    padding: 8px;
+    border-radius: 4px 4px 0 0;
+}
+
+.col-heading h2 {
+    margin: 0;
+    color: #ffffff; /* Django admin dark blue */
+    font-size: 16px;
+    font-weight: 600; 
+}
+
+#filter-container label {
+    display: block;
+    margin-bottom: 5px;
+    color: #417690; /* Django admin blue */
+    font-weight: 600;
+    font-size: 14px;
+}
+
+#filter-products {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fcfcfc;
+}
+.action-row {
+    margin-top: 15px;
+    text-align: right;
+}
+.button {
+    background: #79aec8;
+    padding: 6px 15px;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-weight: normal;
+    font-size: 13px;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+.button:hover {
+    background: #609ab6;
+}
+button.default {
+    background: #417690;
+    padding: 8px 15px;
+}
+button.default:hover {
+    background: #205067;
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const allProducts = document.getElementById('all-products');
+    const trendingProducts = document.getElementById('trending-products');
+    const topProducts = document.getElementById('top-products');
+    
+    // Add to trending button
+    document.getElementById('add-trending').addEventListener('click', function() {
+        moveSelectedItems(allProducts, trendingProducts);
+    });
+    
+    // Add to top button
+    document.getElementById('add-top').addEventListener('click', function() {
+        moveSelectedItems(allProducts, topProducts);
+    });
+    
+    // Remove from trending button
+    document.getElementById('remove-trending').addEventListener('click', function() {
+        moveSelectedItems(trendingProducts, allProducts);
+    });
+    
+    // Remove from top button
+    document.getElementById('remove-top').addEventListener('click', function() {
+        moveSelectedItems(topProducts, allProducts);
+    });
+    
+    // Save button
+    document.getElementById('save-button').addEventListener('click', function() {
+        // Collect trending products
+        const trendingIds = [];
+        for (const item of trendingProducts.children) {
+            trendingIds.push(item.dataset.id);
+        }
+        document.getElementById('trending-ids').value = trendingIds.join(',');
+        
+        // Collect top products
+        const topIds = [];
+        for (const item of topProducts.children) {
+            topIds.push(item.dataset.id);
+        }
+        document.getElementById('top-ids').value = topIds.join(',');
+        
+        // Submit the form
+        document.getElementById('featured-form').submit();
+    });
+    
+    // Helper function to move selected items
+    function moveSelectedItems(sourceList, targetList) {
+    const selectedItems = Array.from(sourceList.querySelectorAll('.selected'));
+    selectedItems.forEach(item => {
+        // Check if item already exists in target
+        const exists = Array.from(targetList.children).some(
+            existing => existing.dataset.id === item.dataset.id
+        );
+        if (!exists) {
+            targetList.appendChild(item.cloneNode(true));
+        }
+        
+        // Remove selection class from the item
+        item.classList.remove('selected');
+        
+        // Only remove from source if it's not the all-products list
+        if (sourceList.id !== 'all-products') {
+            item.remove();
+        }
+    });
+    
+    // Reattach click handlers
+    addClickHandlers();
+}
+    
+    // Function to handle clicks on product items
+    function addClickHandlers() {
+        document.querySelectorAll('.product-item').forEach(item => {
+            item.onclick = function(e) {
+                if (e.ctrlKey) {
+                    this.classList.toggle('selected');
+                } else {
+                    // Unselect all siblings
+                    const siblings = this.parentNode.querySelectorAll('.product-item');
+                    siblings.forEach(sib => sib.classList.remove('selected'));
+                    this.classList.add('selected');
+                }
+            };
+        });
+    }
+    
+    // Initial click handlers
+    addClickHandlers();
+    
+    // Filter functionality
+    document.getElementById('filter-products').addEventListener('input', function() {
+        const filterText = this.value.toLowerCase();
+        const products = allProducts.querySelectorAll('.product-item');
+        
+        products.forEach(product => {
+            const productText = product.textContent.toLowerCase();
+            if (productText.includes(filterText)) {
+                product.style.display = '';
+            } else {
+                product.style.display = 'none';
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    
+    <div class="module">
+        <div id="filter-container">
+            <label for="filter-products"><strong>Filter Available Products:</strong></label>
+            <input type="text" id="filter-products" placeholder="Type to find products by name, brand, or category...">
+        </div>
+        
+        <div class="featured-boxes">
+            <div class="featured-box">
+                <div class="col-heading">
+                    <h2>Available Products</h2>
+                    <div>
+                        <button type="button" id="add-trending" class="button">Add to Trending</button>
+                        <button type="button" id="add-top" class="button">Add to Top</button>
+                    </div>
+                </div>
+                
+                <div class="product-list" id="all-products">
+                    {% for product in available_products %}
+                    <div class="product-item" data-id="{{ product.id }}">
+                        <div>
+                            <div class="product-title">{{ product.title }}</div>
+                            <div class="product-info">{{ product.brand }} &middot; {{ product.product_category }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="featured-box">
+                <div class="col-heading">
+                    <h2>Trending Products</h2>
+                    <button type="button" id="remove-trending" class="button">Remove</button>
+                </div>
+                <div class="product-list" id="trending-products">
+                    {% for item in trending_items %}
+                    <div class="product-item" data-id="{{ item.product.id }}">
+                        <div>
+                            <div class="product-title">{{ item.product.title }}</div>
+                            <div class="product-info">{{ item.product.brand }} &middot; {{ item.product.product_category }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="featured-box">
+                <div class="col-heading">
+                    <h2>Top Products</h2>
+                    <button type="button" id="remove-top" class="button">Remove</button>
+                </div>
+                <div class="product-list" id="top-products">
+                    {% for item in top_items %}
+                    <div class="product-item" data-id="{{ item.product.id }}">
+                        <div>
+                            <div class="product-title">{{ item.product.title }}</div>
+                            <div class="product-info">{{ item.product.brand }} &middot; {{ item.product.product_category }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="action-row">
+            <form id="featured-form" method="post" action="{% url 'admin:save-featured-products' %}">
+                {% csrf_token %}
+                <input type="hidden" id="trending-ids" name="trending_ids" value="">
+                <input type="hidden" id="top-ids" name="top_ids" value="">
+                <button type="button" id="save-button" class="default">Save Featured Products</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
