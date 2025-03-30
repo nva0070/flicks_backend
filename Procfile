@@ -1,2 +1,2 @@
 release: python manage.py showmigrations && python manage.py makemigrations products && python manage.py migrate && python manage.py shell < create_superuser.py
-web: gunicorn flicks_backend.wsgi --log-file -
+web: gunicorn flicks.wsgi --log-file -
