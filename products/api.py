@@ -327,20 +327,11 @@ def filter_products(request):
     if gender:
         products = products.filter(gender=gender)
     
-    # Apply category filter
     if product_category:
         products = products.filter(product_category=product_category)
         
     if age_group:
-        if age_group:
-            all_products = list(products)
-            filtered_products = [
-                product for product in all_products
-                if map_product_age_to_filter(product.age_group) == age_group
-            ]
-            
-            product_ids = [product.id for product in filtered_products]
-            products = Product.objects.filter(id__in=product_ids)
+        products = products.filter(standardized_age=age_group)
     
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
@@ -386,6 +377,42 @@ def redeem_reward(request):
         'remaining_points': 1500
     })
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def all_products(request):
+    """Get all products with optional pagination"""
+    # Get query parameters for pagination
+    page = request.query_params.get('page', 1)
+    page_size = request.query_params.get('page_size', 10)
+    
+    try:
+        page = int(page)
+        page_size = int(page_size)
+    except ValueError:
+        page = 1
+        page_size = 10
+    
+    # Calculate the slices
+    start = (page - 1) * page_size
+    end = start + page_size
+    
+    # Get products
+    products = Product.objects.all().order_by('id')[start:end]
+    
+    # Get total count for pagination info
+    total_count = Product.objects.count()
+    
+    # Serialize the data
+    serializer = ProductSerializer(products, many=True, context={'request': request})
+    
+    # Return data with pagination info
+    return Response({
+        'results': serializer.data,
+        'count': total_count,
+        'total_pages': (total_count + page_size - 1) // page_size,
+        'current_page': page
+    })
+    
 # Flicks Feed endpoints
 @api_view(['GET'])
 def flicks_feed(request):

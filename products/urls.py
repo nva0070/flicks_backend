@@ -13,12 +13,14 @@ urlpatterns = [
     
     path('store/banner/', api.get_shop_banner, name='shop-banner'),
 
+    path('products/', api.all_products, name='all-products'),
     path('products/trending/', api.trending_products, name='trending-products'),
     path('products/top/', api.top_products, name='top-products'),
     path('products/filter/', api.filter_products, name='filter-products'),
     path('products/<int:product_id>/', api.product_detail, name='product-detail'),    
     path('products/search/', api.search_products, name='search-products'),
     path('products/categories/', api.product_categories, name='product-categories'),
+    path('products/age_groups/', api.age_groups, name='product-age-groups'),
     
     path('feed/', api.flicks_feed, name='flicks-feed'),
     path('distributors/', api.distributors_list, name='distributors'),
