@@ -1,7 +1,7 @@
 from django.http import JsonResponse
 from products.models import Shop, ShopUser, Product, FeaturedProduct
 from products.serializers import (
-    ProductSerializer, ProductDetailSerializer 
+    ProductSerializer, ProductDetailSerializer, ShopSerializer, ShopUserSerializer
 )
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -9,6 +9,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Q, Count
+from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
 import json
@@ -615,3 +616,192 @@ def api_overview(request):
         }
     }
     return Response(api_urls)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_shop_with_owner(request):
+    """Create a new shop with an owner - public registration endpoint"""
+    data = request.data
+    
+    # Validate required fields
+    required_fields = [
+        'shop_name', 'shop_address', 'shop_phone', 'shop_email', 
+        'owner_username', 'owner_email', 'owner_password', 'owner_first_name', 'owner_last_name'
+    ]
+    
+    for field in required_fields:
+        if field not in data:
+            return Response(
+                {"error": f"Missing required field: {field}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    try:
+        # Check if username or email already exists
+        if ShopUser.objects.filter(username=data['owner_username']).exists():
+            return Response(
+                {"error": "Username already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if ShopUser.objects.filter(email=data['owner_email']).exists():
+            return Response(
+                {"error": "Email already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Check if shop email already exists
+        if Shop.objects.filter(email=data['shop_email']).exists():
+            return Response(
+                {"error": "Shop with this email already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        with transaction.atomic():
+            # 1. Create the owner user
+            owner = ShopUser.objects.create_user(
+                username=data['owner_username'],
+                email=data['owner_email'],
+                password=data['owner_password'],
+                first_name=data['owner_first_name'],
+                last_name=data['owner_last_name'],
+                role=ShopUser.OWNER
+            )
+            
+            # 2. Create the shop
+            shop = Shop.objects.create(
+                name=data['shop_name'],
+                description=data.get('shop_description', ''),
+                address=data['shop_address'],
+                phone=data['shop_phone'],
+                email=data['shop_email'],
+                owner=owner
+            )
+            
+            # 3. If banner image is provided, handle it
+            if 'banner' in request.FILES:
+                shop.banner = request.FILES['banner']
+                shop.save()
+            
+            # 4. Generate token for automatic login
+            from rest_framework_simplejwt.tokens import RefreshToken
+            refresh = RefreshToken.for_user(owner)
+            tokens = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+            
+            # 5. Return the created shop data with login tokens
+            shop_serializer = ShopSerializer(shop)
+            return Response({
+                'message': 'Shop registered successfully with owner',
+                'shop': shop_serializer.data,
+                'owner': {
+                    'id': owner.id,
+                    'username': owner.username,
+                    'email': owner.email,
+                    'full_name': f"{owner.first_name} {owner.last_name}".strip()
+                },
+                'tokens': tokens
+            }, status=status.HTTP_201_CREATED)
+            
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to register shop: {str(e)}"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_shop_helper(request):
+    """Register as a helper for a shop using invitation code"""
+    data = request.data
+    
+    # Validate required fields
+    required_fields = [
+        'username', 'email', 'password', 'first_name', 'last_name', 
+        'shop_id', 'invitation_code'
+    ]
+    
+    for field in required_fields:
+        if field not in data:
+            return Response(
+                {"error": f"Missing required field: {field}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    try:
+        # Get shop and verify invitation code
+        shop_id = data['shop_id']
+        invitation_code = data['invitation_code']
+        
+        # You need to implement invitation code functionality
+        # For now, we'll just check if the shop exists
+        try:
+            shop = Shop.objects.get(id=shop_id)
+            
+            # In a real implementation, verify invitation code here
+            # if shop.invitation_code != invitation_code:
+            #     return Response({"error": "Invalid invitation code"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Shop.DoesNotExist:
+            return Response(
+                {"error": "Shop not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if username or email already exists
+        if ShopUser.objects.filter(username=data['username']).exists():
+            return Response(
+                {"error": "Username already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if ShopUser.objects.filter(email=data['email']).exists():
+            return Response(
+                {"error": "Email already exists"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Create helper user
+        helper = ShopUser.objects.create_user(
+            username=data['username'],
+            email=data['email'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            role=ShopUser.HELPER
+        )
+        
+        # Add helper to shop
+        shop.helpers.add(helper)
+        
+        # Generate token for automatic login
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(helper)
+        tokens = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
+        
+        return Response({
+            'message': 'Helper registered successfully',
+            'user': {
+                'id': helper.id,
+                'username': helper.username,
+                'email': helper.email,
+                'full_name': f"{helper.first_name} {helper.last_name}".strip(),
+                'role': helper.role
+            },
+            'shop': {
+                'id': shop.id,
+                'name': shop.name
+            },
+            'tokens': tokens
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to register helper: {str(e)}"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )

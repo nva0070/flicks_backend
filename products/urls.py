@@ -3,7 +3,9 @@ from . import api
 
 urlpatterns = [
 
-    path('auth/register/', api.register_user, name='register'),
+    path('auth/register/', api.register_user, name='register'), # Unused; can be removed later
+    path('auth/register/shop/', api.register_shop_with_owner, name='register-shop-with-owner'),
+    path('auth/register/helper/', api.register_shop_helper, name='register-shop-helper'),
     path('auth/login/', api.login_user, name='login'),
     
     path('store/', api.store_info, name='store-info'),
