@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.contrib.auth.models import AbstractUser, Group, Permission
 
 def validate_image(file):
@@ -17,6 +18,21 @@ def validate_image(file):
     if file.size > 5 * 1024 * 1024:
         raise ValidationError('Image file too large. Please upload a file smaller than 5MB.')
 
+def validate_video(file):
+        """Validate that the file is a video in allowed format."""
+        if not file:
+            return
+            
+        ext = file.name.split('.')[-1].lower()
+        valid_extensions = ['mp4', 'mov', 'avi', 'wmv', 'flv', 'webm']
+        
+        if ext not in valid_extensions:
+            raise ValidationError('Unsupported file format. Please upload MP4, MOV, AVI, WMV, FLV or WebM file.')
+        
+        # Check file size (10MB max)
+        if file.size > 100 * 1024 * 1024:
+            raise ValidationError('Video file too large. Please upload a file smaller than 10MB.')
+
 class ShopUser(AbstractUser):
     OWNER = 'owner'
     HELPER = 'helper'
@@ -29,6 +45,17 @@ class ShopUser(AbstractUser):
         max_length=20,
         choices=ROLE_CHOICES,
         default=HELPER,
+    )
+    phone_regex = RegexValidator(
+        regex=r'^\+?1?\d{9,15}$',
+        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
+    )
+    phone = models.CharField(
+        validators=[phone_regex], 
+        max_length=17, 
+        blank=True, 
+        null=True,
+        help_text="Phone number in international format"
     )
     groups = models.ManyToManyField(
         Group,
@@ -47,14 +74,7 @@ class ShopUser(AbstractUser):
         related_name='products_user_set',  
         related_query_name='products_user',
     )
-    
-    def clean(self):
-        if self.owner and self.owner.role != ShopUser.OWNER:
-            raise ValidationError("The shop owner must have the 'Shop Owner' role.")
-            
-        if self.pk and self.helpers.filter(pk=self.owner.pk).exists():
-            raise ValidationError("The shop owner cannot be a helper at the same time.")
-
+   
     def __str__(self):
         return self.username
 
@@ -97,21 +117,6 @@ class Distributor(models.Model):
             raise ValidationError('At least one contact method (email/phone) is required')
 
 class Product(models.Model):
-    def validate_video(file):
-        """Validate that the file is a video in allowed format."""
-        if not file:
-            return
-            
-        ext = file.name.split('.')[-1].lower()
-        valid_extensions = ['mp4', 'mov', 'avi', 'wmv', 'flv', 'webm']
-        
-        if ext not in valid_extensions:
-            raise ValidationError('Unsupported file format. Please upload MP4, MOV, AVI, WMV, FLV or WebM file.')
-        
-        # Check file size (10MB max)
-        if file.size > 10 * 1024 * 1024:
-            raise ValidationError('Video file too large. Please upload a file smaller than 10MB.')
-
     GENDER_CHOICES=[
         ('M','Male'),
         ('F','Female'),
@@ -127,7 +132,22 @@ class Product(models.Model):
         blank=True
     )
     product_category=models.CharField(max_length=100)
-    age_group=models.CharField(max_length=20)
+    age_group = models.CharField(max_length=20)
+
+    STANDARD_AGE_CHOICES = [
+        ("0-18 Months", "0-18 Months"),
+        ("18-36 Months", "18-36 Months"),
+        ("3-5 Years", "3-5 Years"),
+        ("5-7 Years", "5-7 Years"),
+        ("7-12 Years", "7-12 Years"),
+        ("12+ Years", "12+ Years"),
+    ]
+    standardized_age = models.CharField(
+        max_length=20, 
+        choices=STANDARD_AGE_CHOICES,
+        blank=True
+    )
+    
     brand=models.CharField(max_length=100)
     gender=models.CharField(max_length=1,choices=GENDER_CHOICES,default='U')
     description=models.TextField()

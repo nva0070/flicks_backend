@@ -8,6 +8,7 @@ from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
 from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage, FeaturedProduct
 from django.utils.safestring import mark_safe
+from django.db import models 
 
 def setup_groups():
     staff_group, created = Group.objects.get_or_create(name='Staff')
@@ -20,6 +21,35 @@ def setup_groups():
     manufacturer_permissions = Permission.objects.filter(content_type=manufacturer_content_type)
     staff_group.permissions.add(*manufacturer_permissions)
 
+def standardize_age(age_str):
+        """Map CSV age formats to standardized options"""
+        if not age_str:
+            return "3-5 Years"
+            
+        age_str = str(age_str).lower().strip()
+        
+        if "month" in age_str:
+            value = int(''.join(filter(str.isdigit, age_str)))
+            return "0-18 Months" if value <= 18 else "18-36 Months"
+
+        if "yr" in age_str or "year" in age_str:
+            if "-" in age_str:
+                start = int(''.join(filter(str.isdigit, age_str.split("-")[0])))
+                if start < 3: return "18-36 Months"
+                if start < 5: return "3-5 Years"
+                if start < 7: return "5-7 Years"
+                return "7-12 Years"
+            
+            value = int(''.join(filter(str.isdigit, age_str)))
+            if value < 3: return "18-36 Months"
+            if value <= 3: return "3-5 Years"
+            if value <= 5: return "5-7 Years"
+            if value <= 7: return "7-12 Years"
+            if value <= 12: return "7-12 Years"
+            return "12+ Years"
+        
+        return "3-5 Years" 
+        
 class FileUploadForm(forms.Form):
     file = forms.FileField(
         label='Select a file',
@@ -80,6 +110,9 @@ class ManufacturerAdmin(admin.ModelAdmin):
                     data = pd.read_excel(uploaded_file).to_dict('records')
 
                 for row in data:
+                    original_age = row['Age Group']
+                    standardized_age = standardize_age(original_age)
+
                     # Map gender display value to database value
                     gender_value = row['Gender']
                     if gender_value.lower() == 'unisex':
@@ -95,9 +128,10 @@ class ManufacturerAdmin(admin.ModelAdmin):
                         manufacturer=manufacturer,
                         title=row['Title'],
                         product_category=row['Product Category'],
-                        age_group=row['Age Group'],
+                        age_group=original_age, 
+                        standardized_age=standardized_age,
                         brand=row['Brand'],
-                        gender=gender_value,  # Now using the correct database value
+                        gender=gender_value, 
                         description=row['SEO Description']
                     )
                 
@@ -145,6 +179,7 @@ class ProductAdmin(admin.ModelAdmin):
         return "No Video"
     video_preview.short_description = 'Video Preview'
     
+    # Update your fieldsets 
     fieldsets = (
         (None, {
             'fields': ('title', 'manufacturer', 'product_category', 'age_group', 'brand', 'gender')
