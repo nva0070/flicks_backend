@@ -32,6 +32,23 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://flicks.chaayakada.fun',
+    'http://localhost:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://0.0.0.0:8000',
+]
+
+# If you're using CORS headers, make sure those are configured too
+CORS_ALLOWED_ORIGINS = [
+    'https://flicks.chaayakada.fun',
+    'http://localhost:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://0.0.0.0:8000',
+]
+CORS_ALLOW_CREDENTIALS = True
 
 # Application definition
 
