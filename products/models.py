@@ -2,6 +2,11 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.contrib.auth.models import AbstractUser, Group, Permission
+from .utils.media_processors import (
+    process_video, 
+    process_product_image, 
+    process_banner_image
+)
 
 def validate_image(file):
     """Validate that the file is an image."""
@@ -93,6 +98,12 @@ class Manufacturer(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def save(self, *args, **kwargs):
+        # Process banner image to 1280x720
+        if self.banner and hasattr(self.banner, 'file') and not kwargs.pop('no_process', False):
+            self.banner = process_banner_image(self.banner)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.name
 
@@ -169,6 +180,11 @@ class Product(models.Model):
     def all_images(self):
         return self.images.all()
 
+    def save(self, *args, **kwargs):
+        if self.flicks and hasattr(self.flicks, 'file') and not kwargs.pop('no_process', False):
+            self.flicks = process_video(self.flicks)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.title
 
@@ -193,14 +209,15 @@ class ProductImage(models.Model):
         return f"Image for {self.product.title} ({'Primary' if self.is_primary else 'Secondary'})"
     
     def save(self, *args, **kwargs):
-        # If this is marked as primary, unmark other images
+        if self.image and hasattr(self.image, 'file') and not kwargs.pop('no_process', False):
+            self.image = process_product_image(self.image)
+        
         if self.is_primary:
             ProductImage.objects.filter(
                 product=self.product, 
                 is_primary=True
             ).update(is_primary=False)
         
-        # If this is the first image, make it primary
         if not self.pk and not ProductImage.objects.filter(product=self.product).exists():
             self.is_primary = True
             
@@ -231,6 +248,11 @@ class Shop(models.Model):
         limit_choices_to={'role': ShopUser.HELPER}
     )
     
+    def save(self, *args, **kwargs):
+        if self.banner and hasattr(self.banner, 'file') and not kwargs.pop('no_process', False):
+            self.banner = process_banner_image(self.banner)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.name
 
