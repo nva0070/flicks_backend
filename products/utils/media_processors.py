@@ -32,7 +32,24 @@ def process_video(video_file, bitrate='4500k'):
         with open(input_path, 'wb+') as destination:
             for chunk in video_file.chunks():
                 destination.write(chunk)
-        
+        duration = None
+        try:
+            duration_cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                input_path
+            ]
+            duration_result = subprocess.run(
+                duration_cmd,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            duration = int(float(duration_result.stdout.strip()))
+        except Exception as e:
+            logger.error(f"Error extracting video duration: {e}")
         command = [
             'ffmpeg',
             '-y',

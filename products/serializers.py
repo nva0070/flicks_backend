@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ShopUser, Manufacturer, Distributor, Product, Shop, Subscription, ProductImage
+from .models import ShopUser, Manufacturer, Distributor, Product, Shop, Subscription, ProductImage, FlicksAnalytics, ViewSession
 
 
 class ShopUserSerializer(serializers.ModelSerializer):
@@ -32,7 +32,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     manufacturer_name = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
-    video_url = serializers.SerializerMethodField()  # Add this for flicks
+    video_url = serializers.SerializerMethodField()
     images = ProductImageSerializer(many=True, read_only=True, source='images.all')
     
     class Meta:
@@ -104,3 +104,18 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     
     def get_plan_name(self, obj):
         return obj.get_plan_display()
+
+class FlicksAnalyticsSerializer(serializers.ModelSerializer):
+    average_watch_time = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = FlicksAnalytics
+        fields = ['views', 'total_watch_time', 'average_watch_time']
+    
+    def get_average_watch_time(self, obj):
+        return obj.average_watch_time
+
+class ViewSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ViewSession
+        fields = ['id', 'session_id', 'start_time', 'end_time', 'duration', 'completed']

@@ -7,6 +7,7 @@ from .utils.media_processors import (
     process_product_image, 
     process_banner_image
 )
+from django.utils import timezone
 
 def validate_image(file):
     """Validate that the file is an image."""
@@ -169,6 +170,11 @@ class Product(models.Model):
         validators=[validate_video],
         help_text="Upload video file (MP4, MOV, AVI, WMV, FLV or WebM, max 10MB)"
     )
+    video_duration = models.PositiveIntegerField(
+        null=True, 
+        blank=True,
+        help_text="Duration of the video in seconds"
+    )
 
     def primary_image(self):
         primary = self.images.filter(is_primary=True).first()
@@ -182,7 +188,9 @@ class Product(models.Model):
 
     def save(self, *args, **kwargs):
         if self.flicks and hasattr(self.flicks, 'file') and not kwargs.pop('no_process', False):
-            self.flicks = process_video(self.flicks)
+            self.flicks, duration = process_video(self.flicks)
+            if duration:
+                self.video_duration = duration
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -196,7 +204,9 @@ class ProductImage(models.Model):
     )
     image = models.ImageField(
         upload_to='products/photos/',
-        validators=[validate_image]
+        validators=[validate_image],
+        null=True,
+        blank=True
     )
     is_primary = models.BooleanField(default=False)
     alt_text = models.CharField(max_length=100, blank=True)
@@ -301,3 +311,40 @@ class FeaturedProduct(models.Model):
     
     def __str__(self):
         return f"{self.product.title} - {self.get_featured_type_display()}"
+
+
+class FlicksAnalytics(models.Model):
+    """Aggregate analytics for product flicks/videos"""
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name='flicks_analytics')
+    views = models.PositiveIntegerField(default=0)
+    total_watch_time = models.PositiveIntegerField(default=0)  # in seconds
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    @property
+    def average_watch_time(self):
+        """Calculate average watch time in seconds"""
+        return round(self.total_watch_time / self.views, 2) if self.views > 0 else 0
+
+    def __str__(self):
+        return f"Analytics for {self.product.title}"
+
+class ViewSession(models.Model):
+    """Individual viewing sessions"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='view_sessions')
+    user = models.ForeignKey(ShopUser, on_delete=models.SET_NULL, null=True, blank=True)
+    session_id = models.CharField(max_length=100)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    device_info = models.JSONField(default=dict, blank=True)
+    start_time = models.DateTimeField(auto_now_add=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    duration = models.PositiveIntegerField(default=0)  # in seconds
+    completed = models.BooleanField(default=False)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['session_id']),
+            models.Index(fields=['product']),
+        ]
+    
+    def __str__(self):
+        return f"Session {self.id} for {self.product.title}"

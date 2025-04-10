@@ -6,7 +6,7 @@ import csv
 import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage, FeaturedProduct
+from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage, FeaturedProduct, FlicksAnalytics, ViewSession
 from django.utils.safestring import mark_safe
 from django.db import models 
 
@@ -150,24 +150,21 @@ class ProductImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('title', 'brand', 'product_category', 'has_media')
+    list_display = ('title', 'brand', 'product_category', 'has_media', 'view_count', 'total_watch_time_display')
     list_filter = ('product_category', 'brand', 'gender')
     search_fields = ('title', 'brand', 'description')
-    readonly_fields = ('image_preview', 'video_preview')
+    readonly_fields = ('image_preview', 'video_preview', 'analytics_panel')
     inlines = [ProductImageInline]
 
-    def has_media(self, obj):
-        has_images = obj.images.exists()
-        return bool(has_images or obj.flicks)
-    has_media.boolean = True
-    
+    # Define the image_preview method
     def image_preview(self, obj):
-        primary = obj.images.filter(is_primary=True).first()
-        if primary:
-            return mark_safe(f'<img src="{primary.image.url}" width="300" />')
-        return "No Image"
+        primary_image = obj.images.filter(is_primary=True).first()
+        if primary_image and primary_image.image:
+            return mark_safe(f'<img src="{primary_image.image.url}" style="max-height: 200px; max-width: 100%;" />')
+        return "No image available"
     image_preview.short_description = 'Image Preview'
-    
+
+    # Define the video_preview method
     def video_preview(self, obj):
         if obj.flicks:
             return mark_safe(f'''
@@ -176,19 +173,121 @@ class ProductAdmin(admin.ModelAdmin):
                     Your browser does not support the video tag.
                 </video>
             ''')
-        return "No Video"
+        return "No video available"
     video_preview.short_description = 'Video Preview'
+
+    def has_media(self, obj):
+        has_images = obj.images.exists()
+        return bool(has_images or obj.flicks)
+    has_media.boolean = True
     
-    # Update your fieldsets 
+    def view_count(self, obj):
+        """Display view count in admin list view"""
+        try:
+            analytics = FlicksAnalytics.objects.get(product=obj)
+            return analytics.views
+        except FlicksAnalytics.DoesNotExist:
+            return 0
+    view_count.short_description = 'Views'
+    
+    def total_watch_time_display(self, obj):
+        """Display formatted watch time in admin list view"""
+        try:
+            analytics = FlicksAnalytics.objects.get(product=obj)
+            seconds = analytics.total_watch_time
+            if seconds > 3600:
+                hours = seconds // 3600
+                minutes = (seconds % 3600) // 60
+                return f"{hours}h {minutes}m"
+            elif seconds > 60:
+                minutes = seconds // 60
+                secs = seconds % 60
+                return f"{minutes}m {secs}s"
+            else:
+                return f"{seconds}s"
+        except FlicksAnalytics.DoesNotExist:
+            return "0s"
+    total_watch_time_display.short_description = 'Watch Time'
+    
+    def analytics_panel(self, obj):
+        """Display detailed analytics in the product detail view"""
+        if not obj.flicks:
+            return mark_safe('<p>No video available for this product.</p>')
+        
+        try:
+            analytics, created = FlicksAnalytics.objects.get_or_create(product=obj)
+            
+            completion_rate = 0
+            total_sessions = ViewSession.objects.filter(product=obj).count()
+            if total_sessions > 0:
+                completed_sessions = ViewSession.objects.filter(product=obj, completed=True).count()
+                completion_rate = round((completed_sessions / total_sessions) * 100, 2)
+            
+            # Format watch time
+            total_time = analytics.total_watch_time
+            avg_time = analytics.average_watch_time
+            
+            # Format total time
+            if total_time > 3600:
+                total_formatted = f"{total_time // 3600}h {(total_time % 3600) // 60}m {total_time % 60}s"
+            elif total_time > 60:
+                total_formatted = f"{total_time // 60}m {total_time % 60}s"
+            else:
+                total_formatted = f"{total_time}s"
+            
+            # Format average time
+            if avg_time > 3600:
+                avg_formatted = f"{avg_time // 3600}h {(avg_time % 3600) // 60}m {avg_time % 60}s"
+            elif avg_time > 60:
+                avg_formatted = f"{avg_time // 60}m {avg_time % 60}s"
+            else:
+                avg_formatted = f"{avg_time}s"
+            
+            html = f"""
+            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                <h3 style="margin-top: 0;">Video Analytics</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Metric</th>
+                        <th style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">Value</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border-bottom: 1px solid #ddd;">Total Views</td>
+                        <td style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">{analytics.views}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border-bottom: 1px solid #ddd;">Total Watch Time</td>
+                        <td style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">{total_formatted}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border-bottom: 1px solid #ddd;">Average Watch Time</td>
+                        <td style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">{avg_formatted}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border-bottom: 1px solid #ddd;">Completion Rate</td>
+                        <td style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd;">{completion_rate}%</td>
+                    </tr>
+                </table>
+            </div>
+            """
+            return mark_safe(html)
+        except Exception as e:
+            return mark_safe(f'<p>Error retrieving analytics: {e}</p>')
+    analytics_panel.short_description = 'Video Analytics'
+    
+    # Update your fieldsets to include the analytics panel
     fieldsets = (
         (None, {
-            'fields': ('title', 'manufacturer', 'product_category', 'age_group', 'brand', 'gender')
+            'fields': ('title', 'manufacturer', 'product_category', 'age_group', 'standardized_age', 'brand', 'gender')
         }),
         ('Details', {
             'fields': ('description',)
         }),
         ('Media', {
-            'fields': ('image_preview', 'flicks', 'video_preview')  
+            'fields': ('flicks', 'video_duration', 'video_preview')  
+        }),
+        ('Analytics', {
+            'fields': ('analytics_panel',)
         }),
     )
 
