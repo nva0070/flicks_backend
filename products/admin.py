@@ -6,7 +6,10 @@ import csv
 import pandas as pd
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
-from .models import Manufacturer, Product, Distributor, ShopUser, Shop, ProductImage, FeaturedProduct, FlicksAnalytics, ViewSession
+from .models import (
+    Manufacturer, Product, Distributor, ShopUser, Shop, 
+    ProductGallery, FeaturedProduct, FlicksAnalytics, ViewSession
+)
 from django.utils.safestring import mark_safe
 from django.db import models 
 
@@ -143,42 +146,31 @@ class ManufacturerAdmin(admin.ModelAdmin):
         form = FileUploadForm()
         return render(request, "admin/csv_upload.html", {'form': form})
 
-class ProductImageInline(admin.TabularInline):
-    model = ProductImage
+class ProductGalleryInline(admin.TabularInline):
+    model = ProductGallery
     extra = 1
-    fields = ['image', 'is_primary', 'alt_text']
+    fields = ['media_type', 'image', 'video', 'is_primary', 'alt_text', 'display_order']
+    
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        form = formset.form
+        form.base_fields['image'].widget.attrs['class'] = 'gallery-image-field'
+        form.base_fields['video'].widget.attrs['class'] = 'gallery-video-field'
+        return formset
+
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ('title', 'brand', 'product_category', 'has_media', 'view_count', 'total_watch_time_display')
     list_filter = ('product_category', 'brand', 'gender')
     search_fields = ('title', 'brand', 'description')
-    readonly_fields = ('image_preview', 'video_preview', 'analytics_panel')
-    inlines = [ProductImageInline]
-
-    # Define the image_preview method
-    def image_preview(self, obj):
-        primary_image = obj.images.filter(is_primary=True).first()
-        if primary_image and primary_image.image:
-            return mark_safe(f'<img src="{primary_image.image.url}" style="max-height: 200px; max-width: 100%;" />')
-        return "No image available"
-    image_preview.short_description = 'Image Preview'
-
-    # Define the video_preview method
-    def video_preview(self, obj):
-        if obj.flicks:
-            return mark_safe(f'''
-                <video width="320" height="240" controls>
-                    <source src="{obj.flicks.url}" type="video/mp4">
-                    Your browser does not support the video tag.
-                </video>
-            ''')
-        return "No video available"
-    video_preview.short_description = 'Video Preview'
+    readonly_fields = ('analytics_panel',)  # Remove image_preview and video_preview
+    inlines = [ProductGalleryInline]  # Replace ProductImageInline with ProductGalleryInline
 
     def has_media(self, obj):
-        has_images = obj.images.exists()
-        return bool(has_images or obj.flicks)
+        """Check if product has any media (images or videos)"""
+        has_gallery = obj.gallery.exists()
+        return bool(has_gallery or obj.flicks)
     has_media.boolean = True
     
     def view_count(self, obj):
@@ -211,12 +203,21 @@ class ProductAdmin(admin.ModelAdmin):
     
     def analytics_panel(self, obj):
         """Display detailed analytics in the product detail view"""
-        if not obj.flicks:
+        # Check if the product has a video
+        has_video = obj.flicks or obj.gallery.filter(media_type='video').exists()
+        
+        if not has_video:
             return mark_safe('<p>No video available for this product.</p>')
         
         try:
             analytics, created = FlicksAnalytics.objects.get_or_create(product=obj)
             
+            # Calculate average time per view
+            avg_time = 0
+            if analytics.views > 0:
+                avg_time = round(analytics.total_watch_time / analytics.views)
+            
+            # Calculate completion rate
             completion_rate = 0
             total_sessions = ViewSession.objects.filter(product=obj).count()
             if total_sessions > 0:
@@ -225,7 +226,6 @@ class ProductAdmin(admin.ModelAdmin):
             
             # Format watch time
             total_time = analytics.total_watch_time
-            avg_time = analytics.average_watch_time
             
             # Format total time
             if total_time > 3600:
@@ -275,7 +275,7 @@ class ProductAdmin(admin.ModelAdmin):
             return mark_safe(f'<p>Error retrieving analytics: {e}</p>')
     analytics_panel.short_description = 'Video Analytics'
     
-    # Update your fieldsets to include the analytics panel
+    # Update fieldsets to remove preview fields
     fieldsets = (
         (None, {
             'fields': ('title', 'manufacturer', 'product_category', 'age_group', 'standardized_age', 'brand', 'gender')
@@ -284,7 +284,7 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('description',)
         }),
         ('Media', {
-            'fields': ('flicks', 'video_duration', 'video_preview')  
+            'fields': ('flicks', 'video_duration')  # Remove video_preview
         }),
         ('Analytics', {
             'fields': ('analytics_panel',)

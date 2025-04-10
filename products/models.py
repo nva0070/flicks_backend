@@ -177,14 +177,37 @@ class Product(models.Model):
     )
 
     def primary_image(self):
+        """Get primary image from the ProductImage model"""
         primary = self.images.filter(is_primary=True).first()
         if primary:
             return primary.image
         # Fallback to legacy image field
         return self.image
 
-    def all_images(self):
-        return self.images.all()
+    def primary_image(self):
+        """Get primary image from the ProductGallery model"""
+        primary = self.gallery.filter(is_primary=True, media_type='image').first()
+        if primary and primary.image:
+            return primary.image
+        return None
+
+    # Remove the primary_video method if you don't want that concept
+    # Or replace it with a method that just returns the flicks field
+    def get_video(self):
+        """Get the product video"""
+        return self.flicks
+
+    def all_gallery_items(self):
+        """Get all gallery items, ordered by display priority"""
+        return self.gallery.all()
+
+    def gallery_images(self):
+        """Get all images from gallery"""
+        return self.gallery.filter(media_type='image')
+
+    def gallery_videos(self):
+        """Get all videos from gallery"""
+        return self.gallery.filter(media_type='video')
 
     def save(self, *args, **kwargs):
         if self.flicks and hasattr(self.flicks, 'file') and not kwargs.pop('no_process', False):
@@ -196,39 +219,111 @@ class Product(models.Model):
     def __str__(self):
         return self.title
 
-class ProductImage(models.Model):
+class ProductGallery(models.Model):
+    """Gallery items for product (images and videos)"""
+    MEDIA_TYPE_CHOICES = [
+        ('image', 'Image'),
+        ('video', 'Video'),
+    ]
+    
     product = models.ForeignKey(
         'Product',  
         on_delete=models.CASCADE,
-        related_name='images'
+        related_name='gallery'
+    )
+    media_type = models.CharField(
+        max_length=5,
+        choices=MEDIA_TYPE_CHOICES,
+        default='image'
     )
     image = models.ImageField(
         upload_to='products/photos/',
         validators=[validate_image],
         null=True,
-        blank=True
+        blank=True,
+        help_text="Upload a product image (JPG, PNG, GIF, WEBP, max 5MB)"
+    )
+    video = models.FileField(
+        upload_to='products/videos/',
+        validators=[validate_video],
+        null=True,
+        blank=True,
+        help_text="Upload a product video (MP4, MOV, AVI, WMV, FLV or WebM, max 10MB)"
+    )
+    video_duration = models.PositiveIntegerField(
+        null=True, 
+        blank=True,
+        help_text="Duration of the video in seconds"
     )
     is_primary = models.BooleanField(default=False)
     alt_text = models.CharField(max_length=100, blank=True)
+    display_order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['-is_primary', 'created_at']
+        ordering = ['-is_primary', 'display_order', 'created_at']
+        verbose_name = 'Product Gallery Item'
+        verbose_name_plural = 'Product Gallery'
     
     def __str__(self):
-        return f"Image for {self.product.title} ({'Primary' if self.is_primary else 'Secondary'})"
+        media_type_str = 'Video' if self.media_type == 'video' else 'Image'
+        primary_str = 'Primary' if self.is_primary else 'Secondary'
+        return f"{media_type_str} for {self.product.title} ({primary_str})"
+    
+    def clean(self):
+        """Validate that only one media type is provided"""
+        if self.media_type == 'image' and not self.image:
+            raise ValidationError('Image file is required for image media type')
+        if self.media_type == 'video' and not self.video:
+            raise ValidationError('Video file is required for video media type')
+        
+        if self.media_type == 'image' and self.video:
+            # If switching from video to image, clear video field
+            self.video = None
+            self.video_duration = None
+        elif self.media_type == 'video' and self.image:
+            # If switching from image to video, clear image field
+            self.image = None
     
     def save(self, *args, **kwargs):
-        if self.image and hasattr(self.image, 'file') and not kwargs.pop('no_process', False):
+        # Process image if provided
+        if self.media_type == 'image' and self.image and hasattr(self.image, 'file') and not kwargs.pop('no_process', False):
+            from .media_processor import process_product_image
             self.image = process_product_image(self.image)
         
-        if self.is_primary:
-            ProductImage.objects.filter(
-                product=self.product, 
-                is_primary=True
-            ).update(is_primary=False)
+        # Process video if provided
+        if self.media_type == 'video' and self.video and hasattr(self.video, 'file') and not kwargs.pop('no_process', False):
+            try:
+                from .media_processor import process_video
+                result = process_video(self.video)
+                
+                # Make sure we have a tuple of length 2
+                if isinstance(result, tuple) and len(result) == 2:
+                    processed_video, duration = result
+                    self.video = processed_video
+                    if duration is not None:
+                        self.video_duration = duration
+                else:
+                    # Log unexpected result format
+                    print(f"Warning: process_video returned unexpected format: {result}")
+            except Exception as e:
+                # Log exception
+                print(f"Error while processing video in ProductGallery: {str(e)}")
         
-        if not self.pk and not ProductImage.objects.filter(product=self.product).exists():
+        # Handle primary flag (ensure only one primary media per product)
+        if self.is_primary:
+            # First, ensure we're only competing with the same media type
+            ProductGallery.objects.filter(
+                product=self.product, 
+                media_type=self.media_type,
+                is_primary=True
+            ).exclude(pk=self.pk).update(is_primary=False)
+        
+        # Make first gallery item primary by default
+        if not self.pk and not ProductGallery.objects.filter(
+            product=self.product, 
+            media_type=self.media_type
+        ).exists():
             self.is_primary = True
             
         super().save(*args, **kwargs)
