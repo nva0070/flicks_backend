@@ -1,6 +1,8 @@
 from rest_framework import serializers
-from .models import ShopUser, Manufacturer, Distributor, Product, Shop, Subscription, ProductImage
-
+from .models import (
+    ShopUser, Manufacturer, Distributor, Product, Shop, 
+    Subscription, ProductGallery, FlicksAnalytics, ViewSession
+)
 
 class ShopUserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -24,32 +26,47 @@ class DistributorSerializer(serializers.ModelSerializer):
         model = Distributor
         fields = '__all__'
 
-class ProductImageSerializer(serializers.ModelSerializer):
+class ProductGallerySerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+    
     class Meta:
-        model = ProductImage
-        fields = ['id', 'image', 'is_primary', 'alt_text']
+        model = ProductGallery
+        fields = ['id', 'media_type', 'image', 'video', 'is_primary', 'alt_text', 'display_order', 'url']
+    
+    def get_url(self, obj):
+        if obj.media_type == 'image' and obj.image:
+            return obj.image.url
+        elif obj.media_type == 'video' and obj.video:
+            return obj.video.url
+        return None
         
 class ProductSerializer(serializers.ModelSerializer):
     manufacturer_name = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
-    video_url = serializers.SerializerMethodField()  # Add this for flicks
-    images = ProductImageSerializer(many=True, read_only=True, source='images.all')
+    video_url = serializers.SerializerMethodField()
+    gallery_items = ProductGallerySerializer(many=True, read_only=True, source='gallery.all')
     
     class Meta:
         model = Product
         fields = ['id', 'title', 'brand', 'product_category', 'age_group', 
-                  'gender', 'description', 'manufacturer_name', 'image_url', 'images', 'video_url']
+                  'gender', 'description', 'manufacturer_name', 'image_url', 
+                  'video_url', 'gallery_items']
     
     def get_manufacturer_name(self, obj):
         return obj.manufacturer.name if obj.manufacturer else None
     
     def get_image_url(self, obj):
-        primary_image = obj.images.filter(is_primary=True).first()
-        if primary_image:
-            return primary_image.image.url
+        # Get primary image from gallery
+        primary_item = obj.gallery.filter(is_primary=True, media_type='image').first()
+        if primary_item and primary_item.image:
+            return primary_item.image.url
+        # Fallback to flicks field if no primary image
+        if obj.flicks:
+            return obj.flicks.url
         return None
-
+        
     def get_video_url(self, obj):
+        # Return the flicks field
         if obj.flicks:
             return obj.flicks.url
         return None
@@ -58,28 +75,50 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     manufacturer_name = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     video_url = serializers.SerializerMethodField()
-    images = ProductImageSerializer(many=True, read_only=True, source='images.all')
+    gallery = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
         fields = ['id', 'title', 'brand', 'product_category', 'age_group', 
                  'gender', 'description', 'manufacturer_name', 
-                 'image_url', 'video_url', 'images']
+                 'image_url', 'video_url', 'gallery']
     
     def get_manufacturer_name(self, obj):
         return obj.manufacturer.name if obj.manufacturer else None
     
     def get_image_url(self, obj):
-        primary_image = obj.images.filter(is_primary=True).first()
-        if primary_image:
-            return primary_image.image.url
+        primary = obj.gallery.filter(is_primary=True, media_type='image').first()
+        if primary and primary.image:
+            return primary.image.url
         return None
         
     def get_video_url(self, obj):
+        # Just return the main flicks field
         if obj.flicks:
             return obj.flicks.url
         return None
-
+        
+    def get_gallery(self, obj):
+        """Get all gallery items with their metadata"""
+        result = []
+        for item in obj.gallery.all():
+            item_data = {
+                'id': item.id,
+                'type': item.media_type,
+                'is_primary': item.is_primary,
+                'alt_text': item.alt_text,
+                'display_order': item.display_order,
+            }
+            
+            if item.media_type == 'image' and item.image:
+                item_data['url'] = item.image.url
+            elif item.media_type == 'video' and item.video:
+                item_data['url'] = item.video.url
+                item_data['duration'] = item.video_duration
+                
+            result.append(item_data)
+            
+        return result
 
 class ShopSerializer(serializers.ModelSerializer):
     owner_name = serializers.ReadOnlyField(source='owner.username')
@@ -104,3 +143,18 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     
     def get_plan_name(self, obj):
         return obj.get_plan_display()
+
+class FlicksAnalyticsSerializer(serializers.ModelSerializer):
+    average_watch_time = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = FlicksAnalytics
+        fields = ['views', 'total_watch_time', 'average_watch_time']
+    
+    def get_average_watch_time(self, obj):
+        return obj.average_watch_time
+
+class ViewSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ViewSession
+        fields = ['id', 'session_id', 'start_time', 'end_time', 'duration', 'completed']

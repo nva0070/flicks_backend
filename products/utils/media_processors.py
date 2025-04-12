@@ -1,73 +1,89 @@
 import os
 import subprocess
 import tempfile
-import uuid
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-from django.conf import settings
-from PIL import Image
-import io
 import logging
+from django.core.files.base import ContentFile
 
 logger = logging.getLogger(__name__)
 
-def process_video(video_file, bitrate='4500k'):
+def process_video(video_file):
     """
-    Process video file to standardize bitrate using H.264 codec
+    Process video using ffmpeg:
+    1. Get video duration
+    2. Compress video to 4500 kbps bitrate
+    3. Normalize audio
     
-    Args:
-        video_file: The Django uploaded file object
-        bitrate: Target bitrate (default 4500k)
-    
-    Returns:
-        Processed file path
+    Returns: (processed_video, duration_in_seconds)
     """
+    if not video_file:
+        return video_file, None
+        
     try:
-        temp_dir = tempfile.gettempdir()
-        input_filename = f"{uuid.uuid4()}_input{os.path.splitext(video_file.name)[1]}"
-        output_filename = f"{uuid.uuid4()}_output.mp4"
-        input_path = os.path.join(temp_dir, input_filename)
-        output_path = os.path.join(temp_dir, output_filename)
-        
-        with open(input_path, 'wb+') as destination:
+        # Create temporary files for processing
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as input_file:
             for chunk in video_file.chunks():
-                destination.write(chunk)
+                input_file.write(chunk)
+            input_path = input_file.name
+            
+        output_path = input_path + '_processed.mp4'
         
-        command = [
+        # Get video duration
+        duration = None
+        try:
+            duration_cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                input_path
+            ]
+            duration_result = subprocess.run(
+                duration_cmd,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            duration = int(float(duration_result.stdout.strip()))
+        except Exception as e:
+            logger.error(f"Error extracting video duration: {e}")
+        
+        # Process video with ffmpeg - compress to 4500 kbps bitrate
+        cmd = [
             'ffmpeg',
-            '-y',
             '-i', input_path,
-            '-c:v', 'libx264', 
-            '-b:v', bitrate,
-            '-preset', 'medium', 
-            '-profile:v', 'main',
-            '-level', '4.0',     
-            '-pix_fmt', 'yuv420p',
-            '-c:a', 'aac',       
-            '-b:a', '128k',      
-            '-movflags', '+faststart', 
+            '-c:v', 'libx264',     # Use H.264 codec
+            '-b:v', '4500k',       # Set video bitrate to 4500 kbps
+            '-maxrate', '5000k',   # Maximum bitrate
+            '-bufsize', '8000k',   # Buffer size
+            '-c:a', 'aac',         # Use AAC for audio
+            '-b:a', '192k',        # Audio bitrate
+            '-ar', '48000',        # Audio sample rate
+            '-af', 'loudnorm',     # Normalize audio
+            '-movflags', '+faststart', # Optimize for web streaming
+            '-y',                  # Overwrite output files
             output_path
         ]
         
-        result = subprocess.run(
-            command, 
-            check=True, 
-            capture_output=True, 
-            text=True
-        )
+        # Run the ffmpeg command
+        subprocess.run(cmd, check=True, capture_output=True)
         
-        with open(output_path, 'rb') as processed_file:
-            content = processed_file.read()
-            
-        os.remove(input_path)
-        os.remove(output_path)
+        # Read the processed file
+        with open(output_path, 'rb') as f:
+            processed_content = f.read()
         
-        return ContentFile(content, name=os.path.basename(video_file.name))
-    
+        # Create a ContentFile with the processed video
+        filename = os.path.basename(video_file.name)
+        processed_file = ContentFile(processed_content, name=filename)
+        
+        # Clean up temporary files
+        os.unlink(input_path)
+        os.unlink(output_path)
+        
+        return processed_file, duration
+        
     except Exception as e:
         logger.error(f"Error processing video: {e}")
-        logger.error(f"FFmpeg error output: {e}")
-        return video_file
+        return video_file, duration  # Return original file if processing fails
 
 def process_product_image(image_file):
     """
