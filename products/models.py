@@ -288,13 +288,11 @@ class ProductGallery(models.Model):
     def save(self, *args, **kwargs):
         # Process image if provided
         if self.media_type == 'image' and self.image and hasattr(self.image, 'file') and not kwargs.pop('no_process', False):
-            from .media_processor import process_product_image
             self.image = process_product_image(self.image)
         
         # Process video if provided
         if self.media_type == 'video' and self.video and hasattr(self.video, 'file') and not kwargs.pop('no_process', False):
             try:
-                from .media_processor import process_video
                 result = process_video(self.video)
                 
                 # Make sure we have a tuple of length 2
