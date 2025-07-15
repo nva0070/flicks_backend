@@ -1,9 +1,10 @@
 from django.urls import path
-from . import api, analytics
+from . import api, analytics, docs
 
 urlpatterns = [
 
-    path('auth/register/', api.register_user, name='register'), # Unused; can be removed later
+    path('docs/', docs.api_documentation, name='api-documentation'),
+
     path('auth/register/shop/', api.register_shop_with_owner, name='register-shop-with-owner'),
     path('auth/register/helper/', api.register_shop_helper, name='register-shop-helper'),
     path('auth/login/', api.login_user, name='login'),
@@ -22,7 +23,8 @@ urlpatterns = [
     path('products/<int:product_id>/', api.product_detail, name='product-detail'),    
     path('products/search/', api.search_products, name='search-products'),
     path('products/categories/', api.product_categories, name='product-categories'),
-    path('products/age_groups/', api.age_groups, name='product-age-groups'),
+
+    # path('products/age_groups/', api.age_groups, name='product-age-groups'),
     
     path('feed/', api.flicks_feed, name='flicks-feed'),
     path('distributors/', api.distributors_list, name='distributors'),
